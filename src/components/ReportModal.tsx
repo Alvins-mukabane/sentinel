@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FileText, Download, ShieldCheck, X, Activity, ExternalLink } from 'lucide-react';
+import { FileText, Download, ShieldCheck, X, Activity, ExternalLink, Code, Table } from 'lucide-react';
 import { ForensicReport } from '../types';
 
 interface ReportModalProps {
@@ -10,6 +10,33 @@ interface ReportModalProps {
 
 export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => {
   if (!report) return null;
+
+  const handleExportJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(report, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `sentinel-report-${report.integrityHash}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  const handleExportCSV = () => {
+    const headers = ["Title", "Evidence", "Confidence", "Tags"];
+    const rows = report.findings.map(f => [
+      `"${f.title.replace(/"/g, '""')}"`,
+      `"${f.evidence.replace(/"/g, '""')}"`,
+      f.confidence.toString(),
+      `"${f.tags.join(', ')}"`
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join("\n");
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", encodeURI(csvContent));
+    downloadAnchorNode.setAttribute("download", `sentinel-findings-${report.integrityHash}.csv`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
 
   return (
     <AnimatePresence>
@@ -39,13 +66,27 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
             </div>
             <div className="flex items-center gap-3">
               <button 
+                onClick={handleExportJSON}
+                className="flex items-center gap-2 px-3 py-1.5 bg-terminal-border/30 hover:bg-terminal-border/50 text-[10px] uppercase font-bold rounded border border-terminal-border transition-colors text-terminal-accent"
+              >
+                <Code size={12} />
+                JSON
+              </button>
+              <button 
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 px-3 py-1.5 bg-terminal-border/30 hover:bg-terminal-border/50 text-[10px] uppercase font-bold rounded border border-terminal-border transition-colors text-terminal-success"
+              >
+                <Table size={12} />
+                CSV
+              </button>
+              <button 
                 onClick={() => window.print()}
                 className="flex items-center gap-2 px-3 py-1.5 bg-terminal-border/30 hover:bg-terminal-border/50 text-[10px] uppercase font-bold rounded border border-terminal-border transition-colors"
               >
                 <Download size={12} />
-                Export PDF
+                PDF
               </button>
-              <button onClick={onClose} className="text-terminal-text/40 hover:text-white transition-colors">
+              <button onClick={onClose} className="text-terminal-text/40 hover:text-white transition-colors ml-2 border-l border-terminal-border pl-4">
                 <X size={20} />
               </button>
             </div>

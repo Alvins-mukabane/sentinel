@@ -6,6 +6,8 @@ import { GeminiService } from './services/geminiService';
 import { TraceConsole, LoopVisualizer } from './components/DashboardComponents';
 import { FindingsPanel } from './components/FindingsPanel';
 import { ReportModal } from './components/ReportModal';
+import { ToolSettingsModal } from './components/ToolSettingsModal';
+import { Settings } from 'lucide-react';
 
 export default function App() {
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
@@ -13,6 +15,11 @@ export default function App() {
   const [findings, setFindings] = useState<ForensicResult[]>([]);
   const [critique, setCritique] = useState<Critique | null>(null);
   const [report, setReport] = useState<ForensicReport | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const handleFeedback = (idx: number, type: 'positive' | 'negative') => {
+    setFindings(prev => prev.map((f, i) => i === idx ? { ...f, feedback: type } : f));
+  };
 
   const addLog = useCallback((message: string, step: AnalysisStatus, type: TraceLog['type'] = 'info', details?: any) => {
     const newLog: TraceLog = {
@@ -168,6 +175,13 @@ export default function App() {
           </div>
 
           <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-2 rounded-full hover:bg-terminal-border/40 text-terminal-text/40 hover:text-terminal-accent transition-colors"
+          >
+             <Settings size={18} />
+          </button>
+
+          <button 
             onClick={runAnalysis}
             disabled={status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETED && status !== AnalysisStatus.FAILED}
             className={`
@@ -197,7 +211,7 @@ export default function App() {
 
         {/* Right Col: Findings */}
         <div className="col-span-7 min-h-0">
-          <FindingsPanel findings={findings} status={status} critique={critique} />
+          <FindingsPanel findings={findings} status={status} critique={critique} onFeedback={handleFeedback} />
         </div>
       </main>
 
@@ -217,6 +231,7 @@ export default function App() {
       </footer>
 
       <ReportModal report={report} onClose={() => setReport(null)} />
+      {isSettingsOpen && <ToolSettingsModal onClose={() => setIsSettingsOpen(false)} />}
     </div>
   );
 }

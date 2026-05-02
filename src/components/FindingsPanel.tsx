@@ -1,17 +1,49 @@
 import React from 'react';
-import { Shield, CheckCircle2, AlertCircle, Bookmark, Link as LinkIcon, Info } from 'lucide-react';
+import { Shield, CheckCircle2, AlertCircle, Bookmark, Link as LinkIcon, Info, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { ForensicResult, Critique, AnalysisStatus } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface FindingsPanelProps {
   findings: ForensicResult[];
   status: AnalysisStatus;
   critique: Critique | null;
+  onFeedback: (findingIdx: number, type: 'positive' | 'negative') => void;
 }
 
-export const FindingsPanel: React.FC<FindingsPanelProps> = ({ findings, status, critique }) => {
+export const FindingsPanel: React.FC<FindingsPanelProps> = ({ findings, status, critique, onFeedback }) => {
+  const chartData = findings.map((f, idx) => ({
+    name: `F${idx + 1}`,
+    confidence: f.confidence * 100,
+    title: f.title
+  }));
+
   return (
     <div className="flex flex-col h-full gap-4">
+      {findings.length > 0 && (
+        <div className="glass-panel p-4 shrink-0 h-40 flex flex-col">
+          <h3 className="text-[10px] font-mono font-bold tracking-widest uppercase mb-2 text-terminal-text/60">Confidence Distribution</h3>
+          <div className="flex-1 min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#E2E8F0' }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#E2E8F0' }} axisLine={false} tickLine={false} />
+                <Tooltip 
+                  cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }}
+                  contentStyle={{ backgroundColor: '#0A0A0B', border: '1px solid #1E293B', fontSize: '10px', color: '#E2E8F0' }}
+                  formatter={(value: number) => [`${value.toFixed(0)}%`, 'Confidence']}
+                />
+                <Bar dataKey="confidence" radius={[2, 2, 0, 0]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.confidence >= 85 ? '#10B981' : entry.confidence >= 50 ? '#F59E0B' : '#EF4444'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 glass-panel overflow-hidden flex flex-col">
           <div className="bg-terminal-border/30 px-4 py-3 border-bottom border-terminal-border flex justify-between items-center shrink-0">
             <div className="flex items-center gap-2">
@@ -34,7 +66,7 @@ export const FindingsPanel: React.FC<FindingsPanelProps> = ({ findings, status, 
               
               {findings.map((finding, idx) => (
                 <motion.div
-                  key={finding.title}
+                  key={finding.title + idx}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.1 }}
@@ -45,15 +77,34 @@ export const FindingsPanel: React.FC<FindingsPanelProps> = ({ findings, status, 
                       <Bookmark size={14} className="text-terminal-accent" />
                       {finding.title}
                     </h3>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] uppercase font-bold text-terminal-text/40">Confidence</span>
-                      <div className="w-12 h-1.5 bg-terminal-border rounded-full overflow-hidden">
-                        <motion.div 
-                          className="h-full bg-terminal-success"
-                          initial={{ width: 0 }}
-                          animate={{ width: `${finding.confidence * 100}%` }}
-                        />
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-bold text-terminal-text/40">Confidence</span>
+                        <div className="w-12 h-1.5 bg-terminal-border rounded-full overflow-hidden relative">
+                          <motion.div 
+                            className={`h-full absolute left-0 top-0 ${finding.confidence >= 0.85 ? 'bg-terminal-success' : finding.confidence >= 0.5 ? 'bg-terminal-warning' : 'bg-terminal-error'}`}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${finding.confidence * 100}%` }}
+                          />
+                        </div>
                       </div>
+                      
+                      {status === AnalysisStatus.COMPLETED && (
+                        <div className="flex items-center gap-1 ml-2 border-l border-terminal-border pl-3">
+                          <button 
+                            onClick={() => onFeedback(idx, 'positive')}
+                            className={`p-1 rounded hover:bg-terminal-success/20 transition-colors ${finding.feedback === 'positive' ? 'text-terminal-success' : 'text-terminal-text/30'}`}
+                          >
+                            <ThumbsUp size={12} />
+                          </button>
+                          <button 
+                            onClick={() => onFeedback(idx, 'negative')}
+                            className={`p-1 rounded hover:bg-terminal-error/20 transition-colors ${finding.feedback === 'negative' ? 'text-terminal-error' : 'text-terminal-text/30'}`}
+                          >
+                            <ThumbsDown size={12} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -61,13 +112,15 @@ export const FindingsPanel: React.FC<FindingsPanelProps> = ({ findings, status, 
                     {finding.evidence}
                   </p>
                   
-                  <div className="flex flex-wrap gap-2">
-                    {finding.tags.map(tag => (
-                      <span key={tag} className="text-[9px] px-2 py-0.5 bg-terminal-accent/10 text-terminal-accent border border-terminal-accent/20 rounded uppercase font-bold">
-                        {tag}
-                      </span>
-                    ))}
-                    <button className="ml-auto text-[9px] flex items-center gap-1 text-terminal-text/30 hover:text-terminal-accent transition-colors uppercase tracking-widest font-bold">
+                  <div className="flex flex-wrap gap-2 items-center justify-between">
+                    <div className="flex flex-wrap gap-2">
+                      {finding.tags.map(tag => (
+                        <span key={tag} className="text-[9px] px-2 py-0.5 bg-terminal-accent/10 text-terminal-accent border border-terminal-accent/20 rounded uppercase font-bold">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                    <button className="text-[9px] flex items-center gap-1 text-terminal-text/30 hover:text-terminal-accent transition-colors uppercase tracking-widest font-bold">
                       <LinkIcon size={10} />
                       Verify Artifact
                     </button>

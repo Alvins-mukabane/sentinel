@@ -8,13 +8,22 @@ export enum AnalysisStatus {
   FAILED = 'FAILED'
 }
 
-export type ToolID = 'process_list' | 'network_conns' | 'file_timeline' | 'registry_keys';
+export type ToolID = string;
 
 export interface ForensicResult {
+  id?: string;
   title: string;
   evidence: string;
   confidence: number;
   tags: string[];
+  feedback?: 'positive' | 'negative' | null;
+}
+
+export interface CustomTool {
+  id: string;
+  name: string;
+  description: string;
+  mockOutput: string;
 }
 
 export interface Critique {
