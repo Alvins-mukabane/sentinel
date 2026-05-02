@@ -1,0 +1,6 @@
+{
+  "name": "Sentinel Loop",
+  "description": "Self-Correcting Autonomous Incident Response Agent for verifiable forensic analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["Forensic Analysis", "Autonomous Reasoning", "Self-Correction"]
+}
