@@ -1,12 +1,58 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Terminal, Shield, Cpu, BadgeCheck, AlertTriangle, RefreshCw, ChevronRight } from 'lucide-react';
+import { Terminal, Shield, Cpu, BadgeCheck, AlertTriangle, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
 import { AnalysisStatus, TraceLog } from '../types';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface ConsoleProps {
   logs: TraceLog[];
   status: AnalysisStatus;
 }
+  
+const LogDetails = ({ details }: { details: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const isJson = details.trim().startsWith('{') || details.trim().startsWith('[');
+  
+  if (!isJson && details.length < 150) {
+    return (
+      <div className="ml-4 pl-4 border-l border-terminal-border text-terminal-text/40 break-words max-w-full text-xs">
+        {details}
+      </div>
+    );
+  }
+
+  return (
+    <div className="ml-4 mt-2 max-w-full">
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1 text-[10px] text-terminal-accent hover:text-terminal-accent/80 mb-1"
+      >
+        {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {isOpen ? "Collapse Details" : "Expand Details"}
+      </button>
+      
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border border-terminal-border rounded mt-1 bg-[#1E1E1E]"
+          >
+            <SyntaxHighlighter 
+              language={isJson ? "json" : "markdown"} 
+              style={vscDarkPlus} 
+              customStyle={{ margin: 0, padding: '0.75rem', fontSize: '10px' }}
+            >
+              {details}
+            </SyntaxHighlighter>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 export const TraceConsole: React.FC<ConsoleProps> = ({ logs, status }) => {
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -43,23 +89,21 @@ export const TraceConsole: React.FC<ConsoleProps> = ({ logs, status }) => {
               className="flex gap-3 group"
             >
               <span className="text-terminal-text/30 shrink-0 select-none">[{log.timestamp.split('T')[1].split('.')[0]}]</span>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-full max-w-full overflow-hidden">
                 <div className="flex items-center gap-2">
                   <span className={`
                     ${log.type === 'success' ? 'text-terminal-success' : ''}
                     ${log.type === 'error' ? 'text-terminal-error' : ''}
                     ${log.type === 'warning' ? 'text-terminal-warning' : ''}
                     ${log.type === 'info' ? 'text-terminal-accent' : ''}
-                    font-bold
+                    font-bold shrink-0
                   `}>
                     {log.step}:
                   </span>
-                  <span className="group-hover:text-white transition-colors">{log.message}</span>
+                  <span className="group-hover:text-white transition-colors truncate">{log.message}</span>
                 </div>
                 {log.details && typeof log.details === 'string' && (
-                  <div className="ml-4 pl-4 border-l border-terminal-border text-terminal-text/40 break-words max-w-full">
-                    {log.details}
-                  </div>
+                  <LogDetails details={log.details} />
                 )}
               </div>
             </motion.div>

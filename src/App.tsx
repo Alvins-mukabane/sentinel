@@ -1,146 +1,88 @@
-import React, { useState, useCallback } from 'react';
-import { Shield, Play, RotateCcw, Activity } from 'lucide-react';
-import { motion } from 'motion/react';
-import { AnalysisStatus, ForensicResult, Critique, TraceLog, ANALYSIS_CONFIG, ToolID, ForensicReport } from './types';
-import { GeminiService } from './services/geminiService';
+import React, { useState, useEffect } from 'react';
+import { Shield, Play, RotateCcw, Activity, Settings, Lock } from 'lucide-react';
+import { AnalysisStatus } from './types';
 import { TraceConsole, LoopVisualizer } from './components/DashboardComponents';
 import { FindingsPanel } from './components/FindingsPanel';
 import { ReportModal } from './components/ReportModal';
 import { ToolSettingsModal } from './components/ToolSettingsModal';
-import { Settings } from 'lucide-react';
+import { useAnalysisLoop } from './hooks/useAnalysisLoop';
 
 export default function App() {
-  const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
-  const [logs, setLogs] = useState<TraceLog[]>([]);
-  const [findings, setFindings] = useState<ForensicResult[]>([]);
-  const [critique, setCritique] = useState<Critique | null>(null);
-  const [report, setReport] = useState<ForensicReport | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
 
-  const handleFeedback = (idx: number, type: 'positive' | 'negative') => {
-    setFindings(prev => prev.map((f, i) => i === idx ? { ...f, feedback: type } : f));
-  };
-
-  const addLog = useCallback((message: string, step: AnalysisStatus, type: TraceLog['type'] = 'info', details?: any) => {
-    const newLog: TraceLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString(),
-      step,
-      message,
-      details,
-      type
-    };
-    setLogs(prev => [...prev, newLog]);
+  useEffect(() => {
+    const token = localStorage.getItem('siem_token');
+    if (token) setIsAuthenticated(true);
   }, []);
 
-  const runAnalysis = async () => {
-    const toolsRun: ToolID[] = [];
-    const evidence: Record<string, string> = {};
-
-    const executeAndLogTool = async (tool: ToolID) => {
-      if (toolsRun.includes(tool)) return;
-      
-      addLog(`Executing forensic tool: ${tool}...`, AnalysisStatus.COLLECTING);
-      const output = await GeminiService.executeTool(tool);
-      evidence[tool] = output;
-      toolsRun.push(tool);
-      addLog(`Metadata extracted from ${tool}.`, AnalysisStatus.COLLECTING, 'success', output);
-      return output;
-    };
-
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      setFindings([]);
-      setCritique(null);
-      setLogs([]);
-      
-      // 1. INITIAL COLLECTION
-      setStatus(AnalysisStatus.COLLECTING);
-      addLog("Starting autonomous collection sequence...", AnalysisStatus.COLLECTING, 'info');
-      
-      // Select baseline tools for initial triage
-      await executeAndLogTool('process_list');
-      await executeAndLogTool('network_conns');
-      
-      let currentFindings: ForensicResult[] = [];
-      let currentIteration = 0;
-      let satisfactory = false;
-
-      while (currentIteration < ANALYSIS_CONFIG.MAX_LOOP_ITERATIONS && !satisfactory) {
-        currentIteration++;
-        addLog(`Loop Iteration ${currentIteration}: Synchronizing Analysis Engine`, status);
-
-        // 2. ANALYSIS
-        setStatus(AnalysisStatus.ANALYZING);
-        addLog("Analyzing current evidence cluster...", AnalysisStatus.ANALYZING);
-        currentFindings = await GeminiService.analyzeEvidence(Object.values(evidence));
-        setFindings(currentFindings);
-        addLog(`Generated ${currentFindings.length} findings for evaluation.`, AnalysisStatus.ANALYZING, 'success');
-
-        // 3. CRITIQUE
-        setStatus(AnalysisStatus.CRITIQUING);
-        addLog("Running formal validation against findings...", AnalysisStatus.CRITIQUING);
-        const loopCritique = await GeminiService.critiqueFindings(currentFindings, toolsRun);
-        setCritique(loopCritique);
-
-        // Validation Rules Check
-        const avgConfidence = currentFindings.reduce((acc, f) => acc + f.confidence, 0) / (currentFindings.length || 1);
-        const belowThreshold = currentFindings.some(f => f.confidence < ANALYSIS_CONFIG.MIN_CONFIDENCE_THRESHOLD);
-
-        if (loopCritique.isSatisfactory && !belowThreshold) {
-          addLog("Findings passed integrity check and confidence threshold.", AnalysisStatus.CRITIQUING, 'success');
-          satisfactory = true;
-        } else {
-          addLog(`Validation failed. confidence_check: ${belowThreshold ? 'LOW' : 'OK'}, satisfies_logic: ${loopCritique.isSatisfactory ? 'OK' : 'FAIL'}`, AnalysisStatus.CRITIQUING, 'warning');
-          
-          // 4. INTELLIGENT CORRECTION (Dynamic Tool Selection)
-          setStatus(AnalysisStatus.CORRECTING);
-          
-          if (loopCritique.suggestedTools.length > 0) {
-            addLog(`Intelligent selection: Critic suggests ${loopCritique.suggestedTools.join(', ')}`, AnalysisStatus.CORRECTING, 'info');
-            
-            const newEvidenceStrings: string[] = [];
-            for (const tool of loopCritique.suggestedTools) {
-              const out = await executeAndLogTool(tool);
-              if (out) newEvidenceStrings.push(out);
-            }
-
-            addLog("Self-correcting findings with new evidence...", AnalysisStatus.CORRECTING);
-            currentFindings = await GeminiService.correctFindings(currentFindings, loopCritique, newEvidenceStrings);
-            setFindings(currentFindings);
-          } else {
-            addLog("No new tools suggested by Critic. Attempting higher-level reasoning correction.", AnalysisStatus.CORRECTING);
-            currentFindings = await GeminiService.correctFindings(currentFindings, loopCritique);
-            setFindings(currentFindings);
-          }
-        }
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem('siem_token', data.token);
+        setIsAuthenticated(true);
+      } else {
+        setLoginError('Invalid password or unauthorized access.');
       }
-
-      setStatus(AnalysisStatus.COMPLETED);
-      addLog(`Autonomous Sentinel Loop complete after ${currentIteration} iterations.`, AnalysisStatus.COMPLETED, 'success');
-
-      // Trigger automatic report generation
-      const finalReport: ForensicReport = {
-        generatedAt: new Date().toISOString(),
-        totalFindings: currentFindings.length,
-        averageConfidence: currentFindings.reduce((acc, f) => acc + f.confidence, 0) / (currentFindings.length || 1),
-        findings: currentFindings,
-        trace: [...logs, {
-           id: 'final-log',
-           timestamp: new Date().toISOString(),
-           step: AnalysisStatus.COMPLETED,
-           message: "Compiling final verifiable report...",
-           type: 'success'
-        }],
-        integrityHash: Math.random().toString(16).substring(2, 10).toUpperCase() + '-' + Math.random().toString(16).substring(2, 10).toUpperCase()
-      };
-      setReport(finalReport);
-
-    } catch (error) {
-      console.error(error);
-      setStatus(AnalysisStatus.FAILED);
-      addLog(`Loop failed: ${error instanceof Error ? error.message : 'Unknown error'}`, AnalysisStatus.FAILED, 'error');
+    } catch(err) {
+      setLoginError('Server connection error.');
     }
   };
+
+  const {
+    status,
+    logs,
+    findings,
+    critique,
+    report,
+    setReport,
+    runAnalysis,
+    handleFeedback,
+  } = useAnalysisLoop();
+
+  if (!isAuthenticated) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-terminal-bg font-mono">
+        <div className="w-full max-w-sm p-8 bg-terminal-border/10 border border-terminal-border rounded-lg shadow-xl backdrop-blur-sm">
+          <div className="flex justify-center mb-6">
+             <div className="p-4 bg-terminal-accent/10 rounded-full border border-terminal-accent/30 shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+                <Lock className="text-terminal-accent" size={32} />
+             </div>
+          </div>
+          <h2 className="text-xl font-bold text-center text-white mb-2 tracking-widest">AIMA CLOUD SIEM</h2>
+          <p className="text-xs text-center text-terminal-text/50 uppercase tracking-widest mb-8">Secure Authenticated Node</p>
+          
+          <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            <div>
+              <input 
+                 type="password" 
+                 placeholder="Dashboard Password"
+                 className="w-full bg-terminal-bg border border-terminal-border rounded p-3 text-sm focus:outline-none focus:border-terminal-accent transition-colors"
+                 value={password}
+                 onChange={e => setPassword(e.target.value)}
+              />
+            </div>
+            {loginError && <p className="text-terminal-warning text-xs text-center">{loginError}</p>}
+            <button 
+              type="submit"
+              className="w-full bg-terminal-accent text-white font-bold py-3 rounded text-sm uppercase tracking-widest hover:bg-terminal-accent/80 transition-all hover:shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+            >
+              Authenticate
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col p-4 gap-4 bg-terminal-bg selection:bg-terminal-accent selection:text-white">
@@ -152,9 +94,10 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-tighter flex items-center gap-2">
-              SENTINEL LOOP <span className="text-[10px] bg-terminal-accent/20 text-terminal-accent px-1.5 py-0.5 rounded tracking-widest">v1.2.0</span>
+              AIMA CLOUD SIEM <span className="text-[10px] bg-terminal-accent/20 text-terminal-accent px-1.5 py-0.5 rounded tracking-widest">v2.0.0</span>
+              <span className="text-[10px] bg-terminal-success/20 border border-terminal-success/30 text-terminal-success px-2 py-0.5 rounded font-mono uppercase tracking-widest ml-2 hidden sm:inline-block">Webhooks Active</span>
             </h1>
-            <p className="text-[10px] font-mono text-terminal-text/50 uppercase tracking-widest">Autonomous Incident Response Agent</p>
+            <p className="text-[10px] font-mono text-terminal-text/50 uppercase tracking-widest">AI-Driven GitHub & Sentry Incident Response</p>
           </div>
         </div>
 

@@ -1,46 +1,28 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisStatus, ForensicResult, Critique, CustomTool } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '' });
 
-// Global Mock Forensic Database
+// We define our MCP tools here. Note they do not contain mock Output anymore.
+// We proxy the execution to the backend structure endpoints.
 let MOCK_FORENSIC_DATABASE: Record<string, CustomTool> = {
-  'process_list': {
-    id: 'process_list',
-    name: 'Process List',
-    description: 'Use for mapping PIDs to executable paths and names.',
-    mockOutput: `PID: 432 | Name: svchost.exe | User: SYSTEM | Path: C:\\Windows\\System32\\svchost.exe
-PID: 2190 | Name: chrome.exe | User: Admin | Path: C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe
-PID: 8812 | Name: updater.exe | User: Admin | Path: C:\\Users\\Admin\\AppData\\Local\\Temp\\updater.exe
-PID: 9001 | Name: winlogon.exe | User: SYSTEM | Path: C:\\Windows\\System32\\winlogon.exe`
+  'analyze_sentry_trace': {
+    id: 'analyze_sentry_trace',
+    name: 'Analyze Sentry Traces',
+    description: 'Fetches recent Sentry error logs to identify application crashes, stack traces, user impact, affected versions, and breadcrumbs.',
+    mockOutput: '' // Removed, comes from API
   },
-  'network_conns': {
-    id: 'network_conns',
-    name: 'Network Connections',
-    description: 'Use for identifying which PIDs are calling external IPs.',
-    mockOutput: `TCP | local: 192.168.1.15:44321 | remote: 45.33.21.144:80 | ESTABLISHED | PID: 8812
-TCP | local: 192.168.1.15:135 | remote: 0.0.0.0:0 | LISTENING | PID: 432`
+  'analyze_github_workflow': {
+    id: 'analyze_github_workflow',
+    name: 'Analyze GitHub Workflows',
+    description: 'Fetches failed GitHub Actions workflows to identify CI/CD and deployment issues.',
+    mockOutput: '' 
   },
-  'file_timeline': {
-    id: 'file_timeline',
-    name: 'File Timeline',
-    description: 'Use for deep temporal analysis of file modifications.',
-    mockOutput: `2026-05-01 14:22:01 | Created | C:\\Users\\Admin\\AppData\\Local\\Temp\\updater.exe
-2026-05-01 14:23:15 | Modified | C:\\Windows\\System32\\drivers\\etc\\hosts
-2026-05-01 14:25:00 | Deleted | C:\\Users\\Admin\\AppData\\Local\\Temp\\setup_log.txt`
-  },
-  'registry_keys': {
-    id: 'registry_keys',
-    name: 'Registry Keys',
-    description: 'Use for verifying persistence (Run keys, etc).',
-    mockOutput: `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run | Name: SysUpdater | Value: C:\\Users\\Admin\\AppData\\Local\\Temp\\updater.exe`
-  },
-  'threat_intel': {
-    id: 'threat_intel',
-    name: 'External Threat Intel Feed',
-    description: 'Use to enrich IPs or Hashes with known malicious indicators.',
-    mockOutput: `INTEL RECORD: IP 45.33.21.144 | Category: C2 Server | Confidence: HIGH | Known Actor: APT29
-INTEL RECORD: File updater.exe | Hash: 8d3b2... | Category: Trojan Drop | Confidence: HIGH`
+  'analyze_github_commits': {
+    id: 'analyze_github_commits',
+    name: 'Analyze GitHub Commits',
+    description: 'Analyzes GitHub commit history, focusing on recent commits to provide context for incident analysis.',
+    mockOutput: ''
   }
 };
 
@@ -54,29 +36,46 @@ export class GeminiService {
   }
 
   /**
-   * Simulates running a forensic tool (SIFT/MCP style)
+   * Option 2 Implementation: Simulates MCP structural execution calling explicit endpoints
    */
   static async executeTool(toolId: string): Promise<string> {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    const tool = MOCK_FORENSIC_DATABASE[toolId];
-    return tool ? tool.mockOutput : "Error: Tool output empty or tool not found.";
+    try {
+      const token = localStorage.getItem('siem_token') || '';
+      const response = await fetch(`/api/mcp/${toolId}`, {
+         method: 'POST',
+         headers: { 
+           'Content-Type': 'application/json',
+           'Authorization': `Bearer ${token}`
+         },
+         body: JSON.stringify({})
+      });
+      if (!response.ok) {
+         return `Error: API returned ${response.status} for tool ${toolId}`;
+      }
+      const data = await response.json();
+      return JSON.stringify(data, null, 2);
+    } catch (e) {
+      console.error(e);
+      return `Error executing tool ${toolId}`;
+    }
   }
 
   /**
    * Phase 1: Analyzer - Generates initial findings
    */
   static async analyzeEvidence(toolOutputs: string[]): Promise<ForensicResult[]> {
-    const prompt = `You are a Forensic Analyzer Engine.
-Analyze the following tool outputs and extract suspended or malicious activity.
-Structure your findings as a list of independent forensic facts.
+    const prompt = `You are an AI DevOps/SIEM Analyzer Engine.
+Analyze the following tool outputs containing GitHub Actions and Sentry Webhook logs.
+Extract critical crashes, CI/CD pipeline failures, and deployment issues.
+Structure your findings as a list of independent incident facts.
 
 TOOL OUTPUTS:
 ${toolOutputs.join('\n\n---\n\n')}
 
-Validation Checklist (Initial):
-- Identify unique artifacts (Files, IPs, PIDs).
-- Link artifacts to timestamps where possible.
-- Group related entries.`;
+Validation Checklist:
+- Correlate Sentry errors to specific GitHub deployments if timestamps align.
+- Highlight fatal errors or pipeline failures that need immediate attention.
+- Group related error entries.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -107,7 +106,7 @@ Validation Checklist (Initial):
     }
   }
 
-  /**
+   /**
    * Phase 2: Critic - Evaluates findings for gaps, errors, or hallucinations
    * Using formal validation rules and tool-gap mapping.
    */
@@ -116,15 +115,19 @@ Validation Checklist (Initial):
       .map(t => `- '${t.id}': ${t.description}`)
       .join('\n');
 
-    const prompt = `You are a Senior Forensic Critic Engine.
-Evaluate the following incident response findings against formal validation rules.
+    const prompt = `You are a Senior DevOps Critic Engine.
+Evaluate the following incident response findings against formal validation rules for SIEM pipelines.
+
+KNOWLEDGE BASE:
+- Common Attack Vectors: Dependency confusion, exposed .env files, SQL injection, RCE via payload.
+- Known Malware indicators: Obfuscated bash scripts, unknown outbound connections, sudden privilege escalation.
+- Common Webhook patterns: Memory exhaustion usually follows a flood of 500 errors.
 
 VALIDATION RULES:
-1. PROCESS CORRELATION: Any file activity (Write/Modify) or network activity MUST be linked to a specific Process ID (PID).
-2. TEMPORAL CONSISTENCY: Timestamps for a single operation (e.g. file creation) must align across different logs (Timeline vs Registry).
-3. SOURCE VERIFICATION: Registry persistence claims must be backed by registry dump artifacts.
-4. CONFIDENCE THRESHOLD: Any finding with confidence < 0.85 must be flagged for re-analysis or more evidence.
-5. THREAT INTEL: Suspicious IPs or unknown processes should be cross-referenced with threat intelligence if the tool is available.
+1. ERROR CORRELATION: Sentry crashes must be evaluated for corresponding CI/CD events or recent commits.
+2. TEMPORAL CONSISTENCY: Timestamps for deployments vs errors must align closely.
+3. CONFIDENCE THRESHOLD: Any finding with confidence < 0.8 MUST be flagged for re-analysis or refinement as it does not meet the minimum threshold for inclusion in the final report.
+4. THREAT INTEL / SECURITY: Query the KNOWLEDGE BASE to identify anomalies or missing corroborating evidence in the findings. Look for suspicious IPs or exploit attempts.
 
 FINDINGS:
 ${JSON.stringify(findings, null, 2)}
@@ -135,10 +138,10 @@ AVAILABLE TOOLS TO FILL GAPS:
 ${availableToolsList}
 
 YOUR TASK:
-- If a finding lacks PID correlation, identify 'process_list' as a gap.
-- If a finding involves 'updater.exe' but lacks a registry check, identify 'registry_keys' as a gap.
-- If finding confidence is low, identify issues.
-- SUGGEST only tools NOT in the 'TOOLS ALREADY RUN' list unless a re-run is critical.`;
+- If a finding's confidence < 0.8, explicitly flag it and suggest tools or refinement.
+- If a finding lacks sufficient detail or misses information from the KNOWLEDGE BASE, identify it.
+- SUGGEST only tools NOT in the 'TOOLS ALREADY RUN' list unless a re-run is critical.
+- Recommend 'analyze_github_commits' if there is a Sentry error but no corresponding pipeline failure identified.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.1-pro-preview",

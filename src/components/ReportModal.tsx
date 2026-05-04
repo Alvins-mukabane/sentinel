@@ -114,15 +114,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
               </div>
               <div className="space-y-4">
                 {report.findings.map((finding, idx) => (
-                  <div key={idx} className="p-4 bg-terminal-border/10 border border-terminal-border rounded">
+                  <div key={`finding-${idx}`} className="p-4 bg-terminal-border/10 border border-terminal-border rounded">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs font-bold text-terminal-accent">{finding.title}</span>
                       <span className="text-[10px] font-mono text-terminal-success">CF: {(finding.confidence * 100).toFixed(0)}%</span>
                     </div>
                     <p className="text-xs text-terminal-text/70 font-mono leading-relaxed">{finding.evidence}</p>
                     <div className="mt-2 flex gap-2">
-                      {finding.tags.map(tag => (
-                        <span key={tag} className="text-[8px] px-1.5 py-0.5 bg-terminal-accent/5 rounded border border-terminal-accent/20 uppercase font-bold text-terminal-accent/70">
+                      {finding.tags.map((tag, tagIdx) => (
+                        <span key={`${tag}-${tagIdx}`} className="text-[8px] px-1.5 py-0.5 bg-terminal-accent/5 rounded border border-terminal-accent/20 uppercase font-bold text-terminal-accent/70">
                           {tag}
                         </span>
                       ))}
@@ -139,7 +139,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
               </div>
               <div className="bg-black/40 p-4 rounded border border-terminal-border font-mono text-[10px] space-y-1">
                 {report.trace.map((log, idx) => (
-                  <div key={idx} className="flex gap-4">
+                  <div key={`trace-${log.id || idx}`} className="flex gap-4">
                     <span className="text-terminal-text/20 shrink-0">[{log.timestamp.split('T')[1].split('.')[0]}]</span>
                     <span className="text-terminal-accent shrink-0 uppercase w-20">{log.step}</span>
                     <span className="text-terminal-text/50">{log.message}</span>

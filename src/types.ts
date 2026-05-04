@@ -17,6 +17,7 @@ export interface ForensicResult {
   confidence: number;
   tags: string[];
   feedback?: 'positive' | 'negative' | null;
+  timestamp?: string;
 }
 
 export interface CustomTool {
@@ -54,6 +55,6 @@ export interface ForensicReport {
 }
 
 export const ANALYSIS_CONFIG = {
-  MIN_CONFIDENCE_THRESHOLD: 0.85,
+  MIN_CONFIDENCE_THRESHOLD: 0.8,
   MAX_LOOP_ITERATIONS: 3,
 };
